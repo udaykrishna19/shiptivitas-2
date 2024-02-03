@@ -118,7 +118,7 @@ app.put('/api/v1/clients/:id', (req, res) => {
   const id = parseInt(req.params.id , 10);
   const { valid, messageObj } = validateId(id);
   if (!valid) {
-    res.status(400).send(messageObj);
+    return res.status(400).send(messageObj);
   }
 
   let { status, priority } = req.body;
@@ -127,10 +127,34 @@ app.put('/api/v1/clients/:id', (req, res) => {
 
   /* ---------- Update code below ----------*/
 
+  // If status is provided, update the status of the client
+  if (status) {
+    db.prepare('UPDATE clients SET status = ? WHERE id = ?').run(status, id);
+  }
 
+  // If priority is provided, update the priority of the client and adjust the priority of other clients accordingly
+  if (priority) {
+    const { valid, messageObj } = validatePriority(priority);
+    if (!valid) {
+      return res.status(400).send(messageObj);
+    }
+
+    // Begin a transaction
+    db.transaction(() => {
+      // Decrease the priority of clients with a priority greater than or equal to the new priority
+      db.prepare('UPDATE clients SET priority = priority + 1 WHERE priority >= ? AND status = ?').run(priority, client.status);
+
+      // Update the priority of the current client
+      db.prepare('UPDATE clients SET priority = ? WHERE id = ?').run(priority, id);
+    })();
+  }
+
+  // Fetch the updated list of clients
+  clients = db.prepare('select * from clients').all();
 
   return res.status(200).send(clients);
 });
+
 
 app.listen(3001);
 console.log('app running on port ', 3001);
